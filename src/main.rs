@@ -6,6 +6,10 @@ trait CommonRecord: std::fmt::Debug {
     async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Option<Self>>
     where
         Self: Sized;
+    async fn all(pool: &SqlitePool) -> anyhow::Result<Vec<Self>>
+    where
+        Self: Sized;
+
     async fn db_update(&self, pool: &SqlitePool) -> anyhow::Result<()>;
     async fn db_delete(&self, pool: &SqlitePool) -> anyhow::Result<()>;
 }
@@ -31,11 +35,18 @@ impl CommonRecord for Importance {
     }
 
     async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Option<Self>> {
-        let importance = sqlx::query_as!(Importance, "SELECT * FROM importance WHERE id = $1", id)
+        let importance = sqlx::query_as!(Self, "SELECT * FROM importance WHERE id = $1", id)
             .fetch_optional(pool)
             .await?;
 
         Ok(importance)
+    }
+
+    async fn all(pool: &SqlitePool) -> anyhow::Result<Vec<Self>> {
+        let vec = sqlx::query_as!(Self, "SELECT * FROM importance")
+            .fetch_all(pool)
+            .await?;
+        Ok(vec)
     }
 
     async fn db_delete(&self, pool: &SqlitePool) -> anyhow::Result<()> {
@@ -107,6 +118,13 @@ impl CommonRecord for Tag {
             .await?;
 
         Ok(tag)
+    }
+
+    async fn all(pool: &SqlitePool) -> anyhow::Result<Vec<Self>> {
+        let vec = sqlx::query_as!(Self, "SELECT * FROM tag")
+            .fetch_all(pool)
+            .await?;
+        Ok(vec)
     }
 
     async fn db_update(&self, pool: &SqlitePool) -> anyhow::Result<()> {
