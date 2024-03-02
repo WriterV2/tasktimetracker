@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS task
 (
     id   INTEGER     PRIMARY KEY NOT NULL,
-    name VARCHAR(30)             NOT NULL DEFAULT '',
+    name VARCHAR(30)             NOT NULL UNIQUE DEFAULT '',
     des  TEXT                    NOT NULL DEFAULT '',
     done BOOLEAN                 NOT NULL DEFAULT 0,
     time INTEGER                 NOT NULL DEFAULT 0,
@@ -12,8 +12,8 @@ CREATE TABLE IF NOT EXISTS task
 CREATE TABLE IF NOT EXISTS importance
 (
     id   INTEGER      PRIMARY KEY NOT NULL,
-    name VARCHAR(30)              NOT NULL,
-    val  INTEGER                  NOT NULL DEFAULT 0
+    name VARCHAR(30)              NOT NULL UNIQUE,
+    val  INTEGER                  NOT NULL UNIQUE DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS tag
