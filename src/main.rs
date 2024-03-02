@@ -1,6 +1,15 @@
 use sqlx::sqlite::SqlitePool;
 use std::env;
 
+trait CommonTable: std::fmt::Debug {
+    async fn db_add(&self, pool: &SqlitePool) -> anyhow::Result<()>;
+    async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Option<Self>>
+    where
+        Self: Sized;
+    async fn db_update(&self, pool: &SqlitePool) -> anyhow::Result<()>;
+    async fn db_delete(&self, pool: &SqlitePool) -> anyhow::Result<()>;
+}
+
 #[derive(Debug)]
 struct Importance {
     id: i64,
@@ -8,8 +17,8 @@ struct Importance {
     val: i64,
 }
 
-impl Importance {
-    async fn add(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+impl CommonTable for Importance {
+    async fn db_add(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query!(
             "INSERT INTO importance (name, val) VALUES ($1, $2)",
             self.name,
@@ -29,6 +38,27 @@ impl Importance {
         Ok(importance)
     }
 
+    async fn db_delete(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+        sqlx::query!("DELETE FROM importance WHERE id = $1", self.id)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn db_update(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+        sqlx::query!(
+            "UPDATE importance SET name = $1, val = $2 WHERE id = $3",
+            self.name,
+            self.val,
+            self.id
+        )
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+}
+
+impl Importance {
     async fn from_name(name: &str, pool: &SqlitePool) -> anyhow::Result<Option<Self>> {
         let importance = sqlx::query_as!(Self, "SELECT * FROM importance WHERE name = $1", name)
             .fetch_optional(pool)
@@ -43,35 +73,6 @@ impl Importance {
             .await?;
 
         Ok(importance)
-    }
-
-    async fn update_name(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::query!(
-            "UPDATE importance SET name = $1 WHERE id = $2",
-            self.name,
-            self.id
-        )
-        .execute(pool)
-        .await?;
-        Ok(())
-    }
-
-    async fn update_value(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::query!(
-            "UPDATE importance SET val = $1 WHERE id = $2",
-            self.val,
-            self.id
-        )
-        .execute(pool)
-        .await?;
-        Ok(())
-    }
-
-    async fn delete(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::query!("DELETE FROM importance WHERE id = $1", self.id)
-            .execute(pool)
-            .await?;
-        Ok(())
     }
 
     fn set_name(mut self, name: &str) -> Self {
@@ -91,8 +92,8 @@ struct Tag {
     name: String,
 }
 
-impl Tag {
-    async fn add(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+impl CommonTable for Tag {
+    async fn db_add(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query!("INSERT INTO tag (name) VALUES ( $1 )", self.name)
             .execute(pool)
             .await?;
@@ -108,26 +109,28 @@ impl Tag {
         Ok(tag)
     }
 
+    async fn db_update(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+        sqlx::query!("UPDATE tag SET name = $1 WHERE id = $2", self.name, self.id)
+            .execute(pool)
+            .await?;
+
+        Ok(())
+    }
+    async fn db_delete(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+        sqlx::query!("DELETE FROM tag WHERE id = $1", self.id)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+}
+
+impl Tag {
     async fn from_name(name: &str, pool: &SqlitePool) -> anyhow::Result<Option<Self>> {
         let tag = sqlx::query_as!(Self, "SELECT * FROM tag WHERE name = $1", name)
             .fetch_optional(pool)
             .await?;
 
         Ok(tag)
-    }
-
-    async fn update_name(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::query!("UPDATE tag SET name = $1 WHERE id = $2", self.name, self.id)
-            .execute(pool)
-            .await?;
-        Ok(())
-    }
-
-    async fn delete(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::query!("DELETE FROM tag WHERE id = $1", self.id)
-            .execute(pool)
-            .await?;
-        Ok(())
     }
 
     fn set_name(mut self, name: &str) -> Self {
