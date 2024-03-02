@@ -1,7 +1,7 @@
 use sqlx::sqlite::SqlitePool;
 use std::env;
 
-trait CommonTable: std::fmt::Debug {
+trait CommonRecord: std::fmt::Debug {
     async fn db_add(&self, pool: &SqlitePool) -> anyhow::Result<()>;
     async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Option<Self>>
     where
@@ -10,14 +10,14 @@ trait CommonTable: std::fmt::Debug {
     async fn db_delete(&self, pool: &SqlitePool) -> anyhow::Result<()>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Importance {
     id: i64,
     name: String,
     val: i64,
 }
 
-impl CommonTable for Importance {
+impl CommonRecord for Importance {
     async fn db_add(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query!(
             "INSERT INTO importance (name, val) VALUES ($1, $2)",
@@ -86,13 +86,13 @@ impl Importance {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Tag {
     id: i64,
     name: String,
 }
 
-impl CommonTable for Tag {
+impl CommonRecord for Tag {
     async fn db_add(&self, pool: &SqlitePool) -> anyhow::Result<()> {
         sqlx::query!("INSERT INTO tag (name) VALUES ( $1 )", self.name)
             .execute(pool)
