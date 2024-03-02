@@ -2,7 +2,10 @@ use sqlx::sqlite::SqlitePool;
 use std::env;
 
 trait CommonRecord: std::fmt::Debug {
-    async fn db_add(&self, pool: &SqlitePool) -> anyhow::Result<()>;
+    async fn db_add(self, pool: &SqlitePool) -> anyhow::Result<Self>
+    where
+        Self: Sized;
+
     async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Option<Self>>
     where
         Self: Sized;
@@ -10,8 +13,13 @@ trait CommonRecord: std::fmt::Debug {
     where
         Self: Sized;
 
-    async fn db_update(&self, pool: &SqlitePool) -> anyhow::Result<()>;
-    async fn db_delete(&self, pool: &SqlitePool) -> anyhow::Result<()>;
+    async fn db_update(self, pool: &SqlitePool) -> anyhow::Result<Self>
+    where
+        Self: Sized;
+
+    async fn db_delete(self, pool: &SqlitePool) -> anyhow::Result<Self>
+    where
+        Self: Sized;
 }
 
 #[derive(Debug, Default)]
@@ -25,8 +33,8 @@ struct Task {
 }
 
 impl CommonRecord for Task {
-    async fn db_add(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::query!(
+    async fn db_add(mut self, pool: &SqlitePool) -> anyhow::Result<Self> {
+        self.id = sqlx::query!(
             "INSERT INTO task (name, des, done, time, iid) VALUES ($1, $2, $3, $4, $5)",
             self.name,
             self.des,
@@ -35,9 +43,10 @@ impl CommonRecord for Task {
             self.iid
         )
         .execute(pool)
-        .await?;
+        .await?
+        .last_insert_rowid();
 
-        Ok(())
+        Ok(self)
     }
 
     async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Option<Self>> {
@@ -55,14 +64,14 @@ impl CommonRecord for Task {
         Ok(vec)
     }
 
-    async fn db_delete(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+    async fn db_delete(self, pool: &SqlitePool) -> anyhow::Result<Self> {
         sqlx::query!("DELETE FROM task WHERE id = $1", self.id)
             .execute(pool)
             .await?;
-        Ok(())
+        Ok(self)
     }
 
-    async fn db_update(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+    async fn db_update(self, pool: &SqlitePool) -> anyhow::Result<Self> {
         sqlx::query!(
             "UPDATE task SET name = $1, des = $2, done = $3, time = $4, iid = $5 WHERE id = $6",
             self.name,
@@ -74,7 +83,7 @@ impl CommonRecord for Task {
         )
         .execute(pool)
         .await?;
-        Ok(())
+        Ok(self)
     }
 }
 
@@ -118,16 +127,17 @@ struct Importance {
 }
 
 impl CommonRecord for Importance {
-    async fn db_add(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::query!(
+    async fn db_add(mut self, pool: &SqlitePool) -> anyhow::Result<Self> {
+        self.id = sqlx::query!(
             "INSERT INTO importance (name, val) VALUES ($1, $2)",
             self.name,
             self.val
         )
         .execute(pool)
-        .await?;
+        .await?
+        .last_insert_rowid();
 
-        Ok(())
+        Ok(self)
     }
 
     async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Option<Self>> {
@@ -145,14 +155,14 @@ impl CommonRecord for Importance {
         Ok(vec)
     }
 
-    async fn db_delete(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+    async fn db_delete(self, pool: &SqlitePool) -> anyhow::Result<Self> {
         sqlx::query!("DELETE FROM importance WHERE id = $1", self.id)
             .execute(pool)
             .await?;
-        Ok(())
+        Ok(self)
     }
 
-    async fn db_update(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+    async fn db_update(self, pool: &SqlitePool) -> anyhow::Result<Self> {
         sqlx::query!(
             "UPDATE importance SET name = $1, val = $2 WHERE id = $3",
             self.name,
@@ -161,7 +171,7 @@ impl CommonRecord for Importance {
         )
         .execute(pool)
         .await?;
-        Ok(())
+        Ok(self)
     }
 }
 
@@ -200,12 +210,13 @@ struct Tag {
 }
 
 impl CommonRecord for Tag {
-    async fn db_add(&self, pool: &SqlitePool) -> anyhow::Result<()> {
-        sqlx::query!("INSERT INTO tag (name) VALUES ( $1 )", self.name)
+    async fn db_add(mut self, pool: &SqlitePool) -> anyhow::Result<Self> {
+        self.id = sqlx::query!("INSERT INTO tag (name) VALUES ( $1 )", self.name)
             .execute(pool)
-            .await?;
+            .await?
+            .last_insert_rowid();
 
-        Ok(())
+        Ok(self)
     }
 
     async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Option<Self>> {
@@ -223,18 +234,18 @@ impl CommonRecord for Tag {
         Ok(vec)
     }
 
-    async fn db_update(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+    async fn db_update(self, pool: &SqlitePool) -> anyhow::Result<Self> {
         sqlx::query!("UPDATE tag SET name = $1 WHERE id = $2", self.name, self.id)
             .execute(pool)
             .await?;
 
-        Ok(())
+        Ok(self)
     }
-    async fn db_delete(&self, pool: &SqlitePool) -> anyhow::Result<()> {
+    async fn db_delete(self, pool: &SqlitePool) -> anyhow::Result<Self> {
         sqlx::query!("DELETE FROM tag WHERE id = $1", self.id)
             .execute(pool)
             .await?;
-        Ok(())
+        Ok(self)
     }
 }
 
@@ -257,21 +268,22 @@ impl Tag {
 async fn main() -> anyhow::Result<()> {
     let pool = SqlitePool::connect(&env::var("DATABASE_URL")?).await?;
 
-    Importance::default()
-        .set_name("Lowest")
-        .set_value(-1000)
-        .db_add(&pool)
-        .await?;
-
     let task = Task::default()
+        .set_importance(
+            Importance::default()
+                .set_name("Lowest")
+                .set_value(-1000)
+                .db_add(&pool)
+                .await?,
+        )
         .set_name("Nothing")
         .set_description("Absolutely nothing!")
         .set_done(false)
-        .set_time(0);
+        .set_time(0)
+        .db_add(&pool)
+        .await?;
 
-    if let Some(importance) = Importance::from_id(1, &pool).await? {
-        task.set_importance(importance).db_add(&pool).await?;
-    }
+    println!("{:#?}", task);
 
     Ok(())
 }
