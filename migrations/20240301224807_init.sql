@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS importance
 CREATE TABLE IF NOT EXISTS tag
 (
     id   INTEGER      PRIMARY KEY NOT NULL,
-    name VARCHAR(30)              NOT NULL
+    name VARCHAR(30)              NOT NULL UNIQUE
 );
 
 CREATE TABLE IF NOT EXISTS tagassignment
