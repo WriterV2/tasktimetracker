@@ -117,6 +117,42 @@ impl Task {
         self.iid = importance.id;
         self
     }
+
+    async fn add_tag(self, tag: Tag, pool: &SqlitePool) -> anyhow::Result<Self> {
+        sqlx::query!(
+            "INSERT INTO tagassignment (tkid, tgid) VALUES ($1, $2)",
+            self.id,
+            tag.id
+        )
+        .execute(pool)
+        .await?;
+
+        Ok(self)
+    }
+
+    async fn assigned_tags(&self, pool: &SqlitePool) -> anyhow::Result<Vec<Tag>> {
+        let tags = sqlx::query_as!(
+            Tag,
+            "SELECT tg.id, tg.name FROM tag tg INNER JOIN tagassignment ta ON tg.id = ta.tgid WHERE ta.tkid = $1",
+            self.id
+        )
+        .fetch_all(pool)
+        .await?;
+
+        Ok(tags)
+    }
+
+    async fn remove_tag(self, tag: Tag, pool: &SqlitePool) -> anyhow::Result<Self> {
+        sqlx::query!(
+            "DELETE FROM tagassignment WHERE tkid = $1 AND tgid = $2",
+            self.id,
+            tag.id
+        )
+        .execute(pool)
+        .await?;
+
+        Ok(self)
+    }
 }
 
 #[derive(Debug, Default)]
@@ -268,7 +304,7 @@ impl Tag {
 async fn main() -> anyhow::Result<()> {
     let pool = SqlitePool::connect(&env::var("DATABASE_URL")?).await?;
 
-    let task = Task::default()
+    let mut task = Task::default()
         .set_importance(
             Importance::default()
                 .set_name("Lowest")
@@ -283,7 +319,23 @@ async fn main() -> anyhow::Result<()> {
         .db_add(&pool)
         .await?;
 
+    task = task
+        .add_tag(Tag::default().set_name("Dev").db_add(&pool).await?, &pool)
+        .await?
+        .add_tag(Tag::default().set_name("Misc").db_add(&pool).await?, &pool)
+        .await?
+        .add_tag(
+            Tag::default().set_name("Writing").db_add(&pool).await?,
+            &pool,
+        )
+        .await?
+        .remove_tag(Tag::from_name("Writing", &pool).await?.unwrap(), &pool)
+        .await?;
+
+    let assigned_tags = &task.assigned_tags(&pool).await?;
+
     println!("{:#?}", task);
+    println!("{:#?}", assigned_tags);
 
     Ok(())
 }
