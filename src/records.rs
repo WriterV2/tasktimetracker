@@ -1,3 +1,4 @@
+use anyhow::Context;
 use sqlx::SqlitePool;
 
 // Corresponds to a table record
@@ -35,7 +36,6 @@ pub struct Task {
     name: String,
     des: String,
     done: bool,
-    time: i64,
     iid: i64,
 }
 
@@ -43,11 +43,10 @@ impl CommonRecord for Task {
     // Add this task to the database and update the id to the database id
     async fn db_add(mut self, pool: &SqlitePool) -> anyhow::Result<Self> {
         self.id = sqlx::query!(
-            "INSERT INTO task (name, des, done, time, iid) VALUES ($1, $2, $3, $4, $5)",
+            "INSERT INTO task (name, des, done, iid) VALUES ($1, $2, $3, $4)",
             self.name,
             self.des,
             self.done,
-            self.time,
             self.iid
         )
         .execute(pool)
@@ -85,11 +84,10 @@ impl CommonRecord for Task {
     // Update the corresponding existing database record to this state
     async fn db_update(self, pool: &SqlitePool) -> anyhow::Result<Self> {
         sqlx::query!(
-            "UPDATE task SET name = $1, des = $2, done = $3, time = $4, iid = $5 WHERE id = $6",
+            "UPDATE task SET name = $1, des = $2, done = $3, iid = $5 WHERE id = $6",
             self.name,
             self.des,
             self.done,
-            self.time,
             self.iid,
             self.id
         )
@@ -115,12 +113,6 @@ impl Task {
     // Mark this task as done
     pub fn set_done(mut self, done: bool) -> Self {
         self.done = done;
-        self
-    }
-
-    // Set/update the time this task has been worked on
-    pub fn set_time(mut self, time_in_sec: i64) -> Self {
-        self.time = time_in_sec;
         self
     }
 
@@ -167,6 +159,19 @@ impl Task {
         .await?;
 
         Ok(self)
+    }
+
+    pub async fn get_real_id(&self, pool: &SqlitePool) -> anyhow::Result<i64> {
+        if let Some(task) = Self::from_id(self.id, pool).await? {
+            Ok(task.id)
+        } else {
+            Err(sqlx::Error::RowNotFound).with_context(|| {
+                format!(
+                    "Task with temporary id {} is not in database and thus has no real id",
+                    self.id
+                )
+            })
+        }
     }
 }
 
@@ -331,5 +336,98 @@ impl Tag {
     pub fn set_name(mut self, name: &str) -> Self {
         self.name = String::from(name);
         self
+    }
+}
+
+#[derive(Debug)]
+pub struct Booking {
+    id: i64,
+    tid: i64,
+    startdate: i64,
+    enddate: Option<i64>,
+}
+
+impl CommonRecord for Booking {
+    async fn db_add(mut self, pool: &SqlitePool) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        self.id = sqlx::query!(
+            "INSERT INTO booking (tid, startdate, enddate) VALUES ($1, $2, $3)",
+            self.tid,
+            self.startdate,
+            self.enddate
+        )
+        .execute(pool)
+        .await?
+        .last_insert_rowid();
+
+        Ok(self)
+    }
+
+    async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Option<Self>> {
+        let booking = sqlx::query_as!(Self, "SELECT * FROM booking WHERE id = $1", id)
+            .fetch_optional(pool)
+            .await?;
+
+        Ok(booking)
+    }
+
+    // Get all tasks from the database
+    async fn all(pool: &SqlitePool) -> anyhow::Result<Vec<Self>> {
+        let vec = sqlx::query_as!(Self, "SELECT * FROM booking")
+            .fetch_all(pool)
+            .await?;
+        Ok(vec)
+    }
+
+    // Delete the corresponding existing database record
+    async fn db_delete(self, pool: &SqlitePool) -> anyhow::Result<Self> {
+        sqlx::query!("DELETE FROM booking WHERE id = $1", self.id)
+            .execute(pool)
+            .await?;
+        Ok(self)
+    }
+
+    // Update the corresponding existing database record to this state
+    async fn db_update(self, pool: &SqlitePool) -> anyhow::Result<Self> {
+        sqlx::query!(
+            "UPDATE booking SET tid = $1, startdate = $2, enddate = $3 WHERE id = $4",
+            self.tid,
+            self.startdate,
+            self.enddate,
+            self.id
+        )
+        .execute(pool)
+        .await?;
+        Ok(self)
+    }
+}
+
+impl Booking {
+    pub async fn set_task(mut self, task_id: i64, pool: &SqlitePool) -> anyhow::Result<Self> {
+        if let Some(task) = Task::from_id(task_id, pool).await? {
+            self.tid = task.id;
+            Ok(self)
+        } else {
+            Err(sqlx::Error::RowNotFound)
+                .with_context(|| format!("Task with id {} not found", task_id))
+        }
+    }
+}
+
+impl Default for Booking {
+    fn default() -> Self {
+        let time = std::time::SystemTime::now();
+        let time = time
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("System time must be after 1970-01-01 00:00:00 UTC")
+            .as_millis() as i64;
+        Self {
+            id: 0,
+            tid: 0,
+            startdate: time,
+            enddate: None,
+        }
     }
 }
