@@ -373,7 +373,7 @@ impl CommonRecord for Booking {
         Ok(booking)
     }
 
-    // Get all tasks from the database
+    // Get all bookings from the database
     async fn all(pool: &SqlitePool) -> anyhow::Result<Vec<Self>> {
         let vec = sqlx::query_as!(Self, "SELECT * FROM booking")
             .fetch_all(pool)
@@ -423,6 +423,14 @@ impl Booking {
             .as_millis() as i64;
         self.enddate = Some(time);
         Ok(self)
+    }
+
+    // Get all bookings for the given task
+    pub async fn from_task(task_id: i64, pool: &SqlitePool) -> anyhow::Result<Vec<Self>> {
+        let booking = sqlx::query_as!(Self, "SELECT * FROM booking WHERE tid = $1", task_id)
+            .fetch_all(pool)
+            .await?;
+        Ok(booking)
     }
 }
 
