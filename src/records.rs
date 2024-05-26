@@ -414,6 +414,16 @@ impl Booking {
                 .with_context(|| format!("Task with id {} not found", task_id))
         }
     }
+
+    pub fn finish_task(mut self) -> anyhow::Result<Self> {
+        let time = std::time::SystemTime::now();
+        let time = time
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("System time must be after 1970-01-01 00:00:00 UTC")
+            .as_millis() as i64;
+        self.enddate = Some(time);
+        Ok(self)
+    }
 }
 
 impl Default for Booking {
