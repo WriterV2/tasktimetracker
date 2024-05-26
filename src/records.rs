@@ -415,14 +415,19 @@ impl Booking {
         }
     }
 
-    pub fn finish_task(mut self) -> anyhow::Result<Self> {
-        let time = std::time::SystemTime::now();
-        let time = time
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("System time must be after 1970-01-01 00:00:00 UTC")
-            .as_millis() as i64;
-        self.enddate = Some(time);
-        Ok(self)
+    // Finish the booking if it is not finished already
+    pub fn finish(mut self) -> anyhow::Result<Self> {
+        if !self.is_finished() {
+            let time = std::time::SystemTime::now();
+            let time = time
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("System time must be after 1970-01-01 00:00:00 UTC")
+                .as_millis() as i64;
+            self.enddate = Some(time);
+            Ok(self)
+        } else {
+            Err(anyhow::anyhow!("Booking is already finished"))
+        }
     }
 
     // Get all bookings for the given task
@@ -431,6 +436,11 @@ impl Booking {
             .fetch_all(pool)
             .await?;
         Ok(booking)
+    }
+
+    // Is the booking finished
+    pub fn is_finished(&self) -> bool {
+        self.enddate.is_some()
     }
 }
 
