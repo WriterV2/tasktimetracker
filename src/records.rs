@@ -1,37 +1,35 @@
 use anyhow::Context;
 use sqlx::SqlitePool;
 
-// Corresponds to a table record
-pub trait CommonRecord: std::fmt::Debug {
-    // Add this record to the database
-    async fn db_add(self, pool: &SqlitePool) -> anyhow::Result<Self>
-    where
-        Self: Sized;
-
-    // Get this data from an existing database record with the given id
-    async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Option<Self>>
-    where
-        Self: Sized;
-
-    // Crate records from all database records of the respective table
-    async fn all(pool: &SqlitePool) -> anyhow::Result<Vec<Self>>
-    where
-        Self: Sized;
-
-    // Update the corresponding existing database record to this state (excluding id)
-    async fn db_update(self, pool: &SqlitePool) -> anyhow::Result<Self>
-    where
-        Self: Sized;
-
-    // Delete the corresponding existing database record
-    async fn db_delete(self, pool: &SqlitePool) -> anyhow::Result<Self>
+pub trait Record: std::fmt::Debug {
+    type Existing: ExistingRecord;
+    // Add this record to the database or update it
+    async fn save(self, pool: &SqlitePool) -> anyhow::Result<Self::Existing>
     where
         Self: Sized;
 }
 
-// Add a task to track the time spent on it until it's done
-#[derive(Debug, Default)]
-pub struct Task {
+// Record that does not exist in the database (yet)
+pub trait NewRecord: Record {
+    type Params;
+    async fn new(params: Self::Params) -> anyhow::Result<Self>
+    where
+        Self: Sized;
+}
+
+// Record from the database
+pub trait ExistingRecord: Record {
+    async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Self>
+    where
+        Self: Sized;
+
+    async fn delete(self, pool: &SqlitePool) -> anyhow::Result<Self>
+    where
+        Self: Sized;
+}
+
+#[derive(Debug)]
+pub struct ExistingTask {
     id: i64,
     name: String,
     des: String,
@@ -39,57 +37,51 @@ pub struct Task {
     iid: i64,
 }
 
-impl CommonRecord for Task {
-    // Add this task to the database and update the id to the database id
-    async fn db_add(mut self, pool: &SqlitePool) -> anyhow::Result<Self> {
-        self.id = sqlx::query!(
-            "INSERT INTO task (name, des, done, iid) VALUES ($1, $2, $3, $4)",
-            self.name,
-            self.des,
-            self.done,
-            self.iid
-        )
-        .execute(pool)
-        .await?
-        .last_insert_rowid();
+#[derive(Debug)]
+struct NewTask {
+    name: String,
+    des: String,
+    iid: i64,
+}
 
-        Ok(self)
-    }
-
-    // Get a task from an corresponding existing database record with the given id
-    async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Option<Self>> {
-        let importance = sqlx::query_as!(Self, "SELECT * FROM task WHERE id = $1", id)
-            .fetch_optional(pool)
-            .await?;
-
-        Ok(importance)
-    }
-
-    // Get all tasks from the database
-    async fn all(pool: &SqlitePool) -> anyhow::Result<Vec<Self>> {
-        let vec = sqlx::query_as!(Self, "SELECT * FROM task")
-            .fetch_all(pool)
-            .await?;
-        Ok(vec)
-    }
-
-    // Delete the corresponding existing database record
-    async fn db_delete(self, pool: &SqlitePool) -> anyhow::Result<Self> {
+impl ExistingRecord for ExistingTask {
+    async fn delete(self, pool: &SqlitePool) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
         sqlx::query!("DELETE FROM task WHERE id = $1", self.id)
             .execute(pool)
             .await?;
         Ok(self)
     }
 
-    // Update the corresponding existing database record to this state
-    async fn db_update(self, pool: &SqlitePool) -> anyhow::Result<Self> {
+    async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Self> {
+        let task = sqlx::query_as!(Self, "SELECT * FROM task WHERE id = $1", id)
+            .fetch_optional(pool)
+            .await?;
+
+        if let Some(t) = task {
+            Ok(t)
+        } else {
+            Err(sqlx::Error::RowNotFound).with_context(|| {
+                format!(
+                    "Task with temporary id {} is not in database and thus has no real id",
+                    id
+                )
+            })
+        }
+    }
+}
+
+impl Record for ExistingTask {
+    type Existing = Self;
+    async fn save(self, pool: &SqlitePool) -> anyhow::Result<Self> {
         sqlx::query!(
-            "UPDATE task SET name = $1, des = $2, done = $3, iid = $5 WHERE id = $6",
+            "UPDATE task SET name = $1, des = $2, done = $3, iid = $4",
             self.name,
             self.des,
             self.done,
-            self.iid,
-            self.id
+            self.iid
         )
         .execute(pool)
         .await?;
@@ -97,32 +89,45 @@ impl CommonRecord for Task {
     }
 }
 
-impl Task {
-    // Set the name/title of the task
-    pub fn set_name(mut self, name: &str) -> Self {
-        self.name = String::from(name);
-        self
-    }
+impl Record for NewTask {
+    type Existing = ExistingTask;
+    async fn save(self, pool: &SqlitePool) -> anyhow::Result<Self::Existing>
+    where
+        Self: Sized,
+    {
+        let id = sqlx::query!(
+            "INSERT INTO task (name, des, done, iid) VALUES ($1, $2, $3, $4)",
+            self.name,
+            self.des,
+            false,
+            self.iid
+        )
+        .execute(pool)
+        .await?
+        .last_insert_rowid();
 
-    // Set the description of the task
-    pub fn set_description(mut self, description: &str) -> Self {
-        self.des = String::from(description);
-        self
+        Ok(ExistingTask {
+            id,
+            name: self.name,
+            des: self.des,
+            done: false,
+            iid: self.iid,
+        })
     }
+}
 
-    // Mark this task as done
-    pub fn set_done(mut self, done: bool) -> Self {
-        self.done = done;
-        self
+impl NewRecord for NewTask {
+    type Params = Importance;
+    async fn new(params: Self::Params) -> anyhow::Result<Self> {
+        Ok(NewTask {
+            name: String::new(),
+            des: String::new(),
+            iid: params.id,
+        })
     }
+}
 
-    // Set the importance to the given importance level (see Importance struct)
-    pub fn set_importance(mut self, importance: Importance) -> Self {
-        self.iid = importance.id;
-        self
-    }
-
-    // Assign the given tag to this task (see Tag struct)
+impl ExistingTask {
     pub async fn add_tag(self, tag: Tag, pool: &SqlitePool) -> anyhow::Result<Self> {
         sqlx::query!(
             "INSERT INTO tagassignment (tkid, tgid) VALUES ($1, $2)",
@@ -135,7 +140,6 @@ impl Task {
         Ok(self)
     }
 
-    // Get all tags assigned to this task
     pub async fn assigned_tags(&self, pool: &SqlitePool) -> anyhow::Result<Vec<Tag>> {
         let tags = sqlx::query_as!(
             Tag,
@@ -148,7 +152,6 @@ impl Task {
         Ok(tags)
     }
 
-    // Remove an assigned tag
     pub async fn remove_tag(self, tag: Tag, pool: &SqlitePool) -> anyhow::Result<Self> {
         sqlx::query!(
             "DELETE FROM tagassignment WHERE tkid = $1 AND tgid = $2",
@@ -160,18 +163,44 @@ impl Task {
 
         Ok(self)
     }
+}
 
-    pub async fn get_real_id(&self, pool: &SqlitePool) -> anyhow::Result<i64> {
-        if let Some(task) = Self::from_id(self.id, pool).await? {
-            Ok(task.id)
-        } else {
-            Err(sqlx::Error::RowNotFound).with_context(|| {
-                format!(
-                    "Task with temporary id {} is not in database and thus has no real id",
-                    self.id
-                )
-            })
-        }
+impl NewTask {
+    pub fn set_name(mut self, name: &str) -> Self {
+        self.name = String::from(name);
+        self
+    }
+
+    pub fn set_description(mut self, description: &str) -> Self {
+        self.des = String::from(description);
+        self
+    }
+
+    pub fn set_importance(mut self, importance: Importance) -> Self {
+        self.iid = importance.id;
+        self
+    }
+}
+
+impl ExistingTask {
+    pub fn set_name(mut self, name: &str) -> Self {
+        self.name = String::from(name);
+        self
+    }
+
+    pub fn set_description(mut self, description: &str) -> Self {
+        self.des = String::from(description);
+        self
+    }
+
+    pub fn set_done(mut self, done: bool) -> Self {
+        self.done = done;
+        self
+    }
+
+    pub fn set_importance(mut self, importance: Importance) -> Self {
+        self.iid = importance.id;
+        self
     }
 }
 
@@ -183,6 +212,7 @@ pub struct Importance {
     val: i64,
 }
 
+/*
 impl CommonRecord for Importance {
     // Add this importance level to the database and update the id to the database id
     async fn db_add(mut self, pool: &SqlitePool) -> anyhow::Result<Self> {
@@ -268,6 +298,7 @@ impl Importance {
         self
     }
 }
+*/
 
 // Tags can be added to a task for categorization and organisation
 #[derive(Debug, Default)]
@@ -276,6 +307,7 @@ pub struct Tag {
     name: String,
 }
 
+/*
 impl CommonRecord for Tag {
     // Add this tag to the database and update the id to the database id
     async fn db_add(mut self, pool: &SqlitePool) -> anyhow::Result<Self> {
@@ -338,6 +370,7 @@ impl Tag {
         self
     }
 }
+*/
 
 #[derive(Debug)]
 pub struct Booking {
@@ -347,6 +380,7 @@ pub struct Booking {
     enddate: Option<i64>,
 }
 
+/*
 impl CommonRecord for Booking {
     async fn db_add(mut self, pool: &SqlitePool) -> anyhow::Result<Self>
     where
@@ -459,3 +493,4 @@ impl Default for Booking {
         }
     }
 }
+*/
