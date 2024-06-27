@@ -205,56 +205,25 @@ impl ExistingTask {
 }
 
 // Different levels of importance can be specified and named
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Importance {
     id: i64,
     name: String,
     val: i64,
 }
 
-/*
-impl CommonRecord for Importance {
-    // Add this importance level to the database and update the id to the database id
-    async fn db_add(mut self, pool: &SqlitePool) -> anyhow::Result<Self> {
-        self.id = sqlx::query!(
-            "INSERT INTO importance (name, val) VALUES ($1, $2)",
-            self.name,
-            self.val
-        )
-        .execute(pool)
-        .await?
-        .last_insert_rowid();
+#[derive(Debug)]
+struct NewImportance {
+    name: String,
+    val: i64,
+}
 
-        Ok(self)
-    }
-
-    // Get an importance level from an corresponding existing database record with the given id
-    async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Option<Self>> {
-        let importance = sqlx::query_as!(Self, "SELECT * FROM importance WHERE id = $1", id)
-            .fetch_optional(pool)
-            .await?;
-
-        Ok(importance)
-    }
-
-    // Get all importance levels from the database
-    async fn all(pool: &SqlitePool) -> anyhow::Result<Vec<Self>> {
-        let vec = sqlx::query_as!(Self, "SELECT * FROM importance")
-            .fetch_all(pool)
-            .await?;
-        Ok(vec)
-    }
-
-    // Delete the corresponding existing database record
-    async fn db_delete(self, pool: &SqlitePool) -> anyhow::Result<Self> {
-        sqlx::query!("DELETE FROM importance WHERE id = $1", self.id)
-            .execute(pool)
-            .await?;
-        Ok(self)
-    }
-
-    // Update the corresponding existing database record to this state
-    async fn db_update(self, pool: &SqlitePool) -> anyhow::Result<Self> {
+impl Record for Importance {
+    type Existing = Self;
+    async fn save(self, pool: &SqlitePool) -> anyhow::Result<Self::Existing>
+    where
+        Self: Sized,
+    {
         sqlx::query!(
             "UPDATE importance SET name = $1, val = $2 WHERE id = $3",
             self.name,
@@ -267,8 +236,68 @@ impl CommonRecord for Importance {
     }
 }
 
+impl Record for NewImportance {
+    type Existing = Importance;
+    async fn save(self, pool: &SqlitePool) -> anyhow::Result<Self::Existing>
+    where
+        Self: Sized,
+    {
+        let id = sqlx::query!(
+            "INSERT INTO importance (name, val) VALUES ($1, $2)",
+            self.name,
+            self.val
+        )
+        .execute(pool)
+        .await?
+        .last_insert_rowid();
+        Ok(Importance {
+            id,
+            val: self.val,
+            name: self.name,
+        })
+    }
+}
+
+impl NewRecord for NewImportance {
+    type Params = (String, i64);
+    async fn new(params: Self::Params) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        let (name, val) = params;
+        Ok(Self { name, val })
+    }
+}
+
+impl ExistingRecord for Importance {
+    async fn delete(self, pool: &SqlitePool) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        sqlx::query!("DELETE FROM importance WHERE id = $1", self.id)
+            .execute(pool)
+            .await?;
+        Ok(self)
+    }
+
+    async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        let importance = sqlx::query_as!(Self, "SELECT * FROM importance WHERE id = $1", id)
+            .fetch_optional(pool)
+            .await?;
+
+        if let Some(t) = importance {
+            Ok(t)
+        } else {
+            Err(sqlx::Error::RowNotFound)
+                .with_context(|| format!("Importance with id {} is not in database", id))
+        }
+    }
+}
+
 impl Importance {
-    // Get an importance level from the database with the given name
     async fn from_name(name: &str, pool: &SqlitePool) -> anyhow::Result<Option<Self>> {
         let importance = sqlx::query_as!(Self, "SELECT * FROM importance WHERE name = $1", name)
             .fetch_optional(pool)
@@ -277,7 +306,6 @@ impl Importance {
         Ok(importance)
     }
 
-    // Get an importance level from the database with the given value
     async fn from_value(val: i64, pool: &SqlitePool) -> anyhow::Result<Option<Self>> {
         let importance = sqlx::query_as!(Self, "SELECT * FROM importance WHERE val = $1", val)
             .fetch_optional(pool)
@@ -286,19 +314,28 @@ impl Importance {
         Ok(importance)
     }
 
-    // Set the name of this importance level
     pub fn set_name(mut self, name: &str) -> Self {
         self.name = String::from(name);
         self
     }
 
-    // Set the value of this importance level
     pub fn set_value(mut self, value: i64) -> Self {
         self.val = value;
         self
     }
 }
-*/
+
+impl NewImportance {
+    pub fn set_name(mut self, name: &str) -> Self {
+        self.name = String::from(name);
+        self
+    }
+
+    pub fn set_value(mut self, value: i64) -> Self {
+        self.val = value;
+        self
+    }
+}
 
 // Tags can be added to a task for categorization and organisation
 #[derive(Debug, Default)]
