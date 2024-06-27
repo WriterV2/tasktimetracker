@@ -32,7 +32,7 @@ pub trait ExistingRecord: Record {
 }
 
 #[derive(Debug)]
-pub struct ExistingTask {
+pub struct Task {
     id: i64,
     name: String,
     des: String,
@@ -47,7 +47,7 @@ struct NewTask {
     iid: i64,
 }
 
-impl ExistingRecord for ExistingTask {
+impl ExistingRecord for Task {
     async fn delete(self, pool: &SqlitePool) -> anyhow::Result<Self>
     where
         Self: Sized,
@@ -76,7 +76,7 @@ impl ExistingRecord for ExistingTask {
     }
 }
 
-impl Record for ExistingTask {
+impl Record for Task {
     type Existing = Self;
     async fn save(self, pool: &SqlitePool) -> anyhow::Result<Self> {
         sqlx::query!(
@@ -93,7 +93,7 @@ impl Record for ExistingTask {
 }
 
 impl Record for NewTask {
-    type Existing = ExistingTask;
+    type Existing = Task;
     async fn save(self, pool: &SqlitePool) -> anyhow::Result<Self::Existing>
     where
         Self: Sized,
@@ -109,7 +109,7 @@ impl Record for NewTask {
         .await?
         .last_insert_rowid();
 
-        Ok(ExistingTask {
+        Ok(Task {
             id,
             name: self.name,
             des: self.des,
@@ -130,7 +130,7 @@ impl NewRecord for NewTask {
     }
 }
 
-impl ExistingTask {
+impl Task {
     pub async fn add_tag(self, tag: Tag, pool: &SqlitePool) -> anyhow::Result<Self> {
         sqlx::query!(
             "INSERT INTO tagassignment (tkid, tgid) VALUES ($1, $2)",
@@ -185,7 +185,7 @@ impl NewTask {
     }
 }
 
-impl ExistingTask {
+impl Task {
     pub fn set_name(mut self, name: &str) -> Self {
         self.name = String::from(name);
         self
@@ -531,7 +531,7 @@ impl ExistingRecord for Booking {
 }
 
 impl Booking {
-    pub async fn set_task(mut self, task: ExistingTask) -> anyhow::Result<Self> {
+    pub async fn set_task(mut self, task: Task) -> anyhow::Result<Self> {
         self.tid = task.id;
         Ok(self)
     }
@@ -550,7 +550,7 @@ impl Booking {
         }
     }
 
-    pub async fn from_task(task: ExistingTask, pool: &SqlitePool) -> anyhow::Result<Vec<Self>> {
+    pub async fn from_task(task: Task, pool: &SqlitePool) -> anyhow::Result<Vec<Self>> {
         let booking = sqlx::query_as!(Self, "SELECT * FROM booking WHERE tid = $1", task.id)
             .fetch_all(pool)
             .await?;
@@ -563,7 +563,7 @@ impl Booking {
 }
 
 impl NewBooking {
-    pub async fn set_task(mut self, task: ExistingTask) -> anyhow::Result<Self> {
+    pub async fn set_task(mut self, task: Task) -> anyhow::Result<Self> {
         self.tid = task.id;
         Ok(self)
     }
