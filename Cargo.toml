@@ -7,6 +7,10 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
+axum = "0.7.5"
 futures = "0.3"
+serde = { version = "1.0.203", features = ["derive"] }
 sqlx = { version = "0.7", features = [ "runtime-tokio", "tls-rustls", "sqlite", "macros" ] }
-tokio = { version = "1.36.0", features = [ "rt", "macros" ] }
+tokio = { version = "1.36.0", features = ["rt", "macros", "full"] }
+tower = { version = "0.4.13", features = ["full"] }
+tower-http = { version = "0.5.2", features = ["fs", "full"] }

@@ -1,5 +1,32 @@
-use anyhow::Context;
+use anyhow::{Context, Ok};
+use axum::routing::get;
+use axum::{Extension, Json, Router};
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use tower::ServiceBuilder;
+use tower_http::add_extension::AddExtensionLayer;
+
+#[derive(Clone)]
+struct ApiContext {
+    pool: SqlitePool,
+}
+
+pub async fn serve(pool: SqlitePool) -> anyhow::Result<()> {
+    let app = Router::new()
+        .route("/api/tasks", get(get_tasks))
+        .layer(ServiceBuilder::new().layer(AddExtensionLayer::new(ApiContext { pool })));
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+    axum::serve(listener, app.into_make_service()).await?;
+    Ok(())
+}
+
+async fn get_tasks(ctx: Extension<ApiContext>) -> Json<Vec<Task>> {
+    let tasks = sqlx::query_as!(Task, "SELECT * FROM task")
+        .fetch_all(&ctx.pool)
+        .await
+        .unwrap();
+    Json(tasks)
+}
 
 pub trait Record: std::fmt::Debug {
     type Existing: ExistingRecord;
@@ -21,7 +48,7 @@ pub trait NewRecord: Record + Default {
 }
 
 // Record from the database
-pub trait ExistingRecord: Record {
+pub trait ExistingRecord: Record + serde::Serialize {
     async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Self>
     where
         Self: Sized;
@@ -31,7 +58,7 @@ pub trait ExistingRecord: Record {
         Self: Sized;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Task {
     id: i64,
     name: String,
@@ -217,7 +244,7 @@ impl Task {
 }
 
 // Different levels of importance can be specified and named
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Importance {
     id: i64,
     name: String,
@@ -350,7 +377,7 @@ impl NewImportance {
 }
 
 // Tags can be added to a task for categorization and organisation
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Tag {
     id: i64,
     name: String,
@@ -452,7 +479,7 @@ impl NewTag {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Booking {
     id: i64,
     tid: i64,
