@@ -291,8 +291,8 @@ impl ExistingRecord for Importance {
             .fetch_optional(pool)
             .await?;
 
-        if let Some(t) = importance {
-            Ok(t)
+        if let Some(i) = importance {
+            Ok(i)
         } else {
             Err(sqlx::Error::RowNotFound)
                 .with_context(|| format!("Importance with id {} is not in database", id))
@@ -341,61 +341,87 @@ impl NewImportance {
 }
 
 // Tags can be added to a task for categorization and organisation
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Tag {
     id: i64,
     name: String,
 }
 
-/*
-impl CommonRecord for Tag {
-    // Add this tag to the database and update the id to the database id
-    async fn db_add(mut self, pool: &SqlitePool) -> anyhow::Result<Self> {
-        self.id = sqlx::query!("INSERT INTO tag (name) VALUES ( $1 )", self.name)
+#[derive(Debug, Default)]
+struct NewTag {
+    name: String,
+}
+
+impl Record for NewTag {
+    type Existing = Tag;
+    async fn save(self, pool: &SqlitePool) -> anyhow::Result<Self::Existing>
+    where
+        Self: Sized,
+    {
+        let id = sqlx::query!("INSERT INTO tag (name) VALUES ( $1 )", self.name)
             .execute(pool)
             .await?
             .last_insert_rowid();
 
-        Ok(self)
+        Ok(Tag {
+            id,
+            name: self.name,
+        })
     }
+}
 
-    // Get a tag from an existing record with the given id
-    async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Option<Self>> {
-        let tag = sqlx::query_as!(Self, "SELECT * FROM tag WHERE id = $1", id)
-            .fetch_optional(pool)
-            .await?;
-
-        Ok(tag)
-    }
-
-    // Get tags from all existing tag records
-    async fn all(pool: &SqlitePool) -> anyhow::Result<Vec<Self>> {
-        let vec = sqlx::query_as!(Self, "SELECT * FROM tag")
-            .fetch_all(pool)
-            .await?;
-        Ok(vec)
-    }
-
-    // Update the corresponding existing database record to this state
-    async fn db_update(self, pool: &SqlitePool) -> anyhow::Result<Self> {
+impl Record for Tag {
+    type Existing = Self;
+    async fn save(self, pool: &SqlitePool) -> anyhow::Result<Self::Existing>
+    where
+        Self: Sized,
+    {
         sqlx::query!("UPDATE tag SET name = $1 WHERE id = $2", self.name, self.id)
-            .execute(pool)
-            .await?;
-
-        Ok(self)
-    }
-
-    // Delete the corresponding existing database record
-    async fn db_delete(self, pool: &SqlitePool) -> anyhow::Result<Self> {
-        sqlx::query!("DELETE FROM tag WHERE id = $1", self.id)
             .execute(pool)
             .await?;
         Ok(self)
     }
 }
 
+impl ExistingRecord for Tag {
+    async fn delete(self, pool: &SqlitePool) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        sqlx::query!("DELETE FROM tag WHERE id = $1", self.id)
+            .execute(pool)
+            .await?;
+        Ok(self)
+    }
+
+    async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        let tag = sqlx::query_as!(Self, "SELECT * FROM tag WHERE id = $1", id)
+            .fetch_optional(pool)
+            .await?;
+
+        if let Some(t) = tag {
+            Ok(t)
+        } else {
+            Err(sqlx::Error::RowNotFound)
+                .with_context(|| format!("Tag with id {} is not in database", id))
+        }
+    }
+}
+
+impl NewRecord for NewTag {
+    type Params = String;
+    async fn new(params: Self::Params) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(Self { name: params })
+    }
+}
+
 impl Tag {
-    // Get a tag from an existing record with the given name
     pub async fn from_name(name: &str, pool: &SqlitePool) -> anyhow::Result<Option<Self>> {
         let tag = sqlx::query_as!(Self, "SELECT * FROM tag WHERE name = $1", name)
             .fetch_optional(pool)
@@ -404,13 +430,18 @@ impl Tag {
         Ok(tag)
     }
 
-    // Set the name of this tag
     pub fn set_name(mut self, name: &str) -> Self {
         self.name = String::from(name);
         self
     }
 }
-*/
+
+impl NewTag {
+    pub fn set_name(mut self, name: &str) -> Self {
+        self.name = String::from(name);
+        self
+    }
+}
 
 #[derive(Debug)]
 pub struct Booking {
