@@ -10,11 +10,14 @@ pub trait Record: std::fmt::Debug {
 }
 
 // Record that does not exist in the database (yet)
-pub trait NewRecord: Record {
+pub trait NewRecord: Record + Default {
     type Params;
     async fn new(params: Self::Params) -> anyhow::Result<Self>
     where
-        Self: Sized;
+        Self: Sized,
+    {
+        Ok(Self::default())
+    }
 }
 
 // Record from the database
@@ -37,7 +40,7 @@ pub struct ExistingTask {
     iid: i64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct NewTask {
     name: String,
     des: String,
@@ -212,7 +215,7 @@ pub struct Importance {
     val: i64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct NewImportance {
     name: String,
     val: i64,
