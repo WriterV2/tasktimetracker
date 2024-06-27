@@ -451,51 +451,19 @@ pub struct Booking {
     enddate: Option<i64>,
 }
 
-/*
-impl CommonRecord for Booking {
-    async fn db_add(mut self, pool: &SqlitePool) -> anyhow::Result<Self>
+#[derive(Debug, Default)]
+pub struct NewBooking {
+    tid: i64,
+    startdate: i64,
+    enddate: Option<i64>,
+}
+
+impl Record for Booking {
+    type Existing = Self;
+    async fn save(self, pool: &SqlitePool) -> anyhow::Result<Self::Existing>
     where
         Self: Sized,
     {
-        self.id = sqlx::query!(
-            "INSERT INTO booking (tid, startdate, enddate) VALUES ($1, $2, $3)",
-            self.tid,
-            self.startdate,
-            self.enddate
-        )
-        .execute(pool)
-        .await?
-        .last_insert_rowid();
-
-        Ok(self)
-    }
-
-    async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Option<Self>> {
-        let booking = sqlx::query_as!(Self, "SELECT * FROM booking WHERE id = $1", id)
-            .fetch_optional(pool)
-            .await?;
-
-        Ok(booking)
-    }
-
-    // Get all bookings from the database
-    async fn all(pool: &SqlitePool) -> anyhow::Result<Vec<Self>> {
-        let vec = sqlx::query_as!(Self, "SELECT * FROM booking")
-            .fetch_all(pool)
-            .await?;
-        Ok(vec)
-    }
-
-    // Delete the corresponding existing database record
-    async fn db_delete(self, pool: &SqlitePool) -> anyhow::Result<Self> {
-        sqlx::query!("DELETE FROM booking WHERE id = $1", self.id)
-            .execute(pool)
-            .await?;
-        Ok(self)
-    }
-
-    // Update the corresponding existing database record to this state
-    async fn db_update(self, pool: &SqlitePool) -> anyhow::Result<Self> {
         sqlx::query!(
             "UPDATE booking SET tid = $1, startdate = $2, enddate = $3 WHERE id = $4",
             self.tid,
@@ -509,18 +477,65 @@ impl CommonRecord for Booking {
     }
 }
 
-impl Booking {
-    pub async fn set_task(mut self, task_id: i64, pool: &SqlitePool) -> anyhow::Result<Self> {
-        if let Some(task) = Task::from_id(task_id, pool).await? {
-            self.tid = task.id;
-            Ok(self)
-        } else {
-            Err(sqlx::Error::RowNotFound)
-                .with_context(|| format!("Task with id {} not found", task_id))
-        }
+impl Record for NewBooking {
+    type Existing = Booking;
+    async fn save(self, pool: &SqlitePool) -> anyhow::Result<Self::Existing>
+    where
+        Self: Sized,
+    {
+        let id = sqlx::query!(
+            "INSERT INTO booking (tid, startdate, enddate) VALUES ($1, $2, $3)",
+            self.tid,
+            self.startdate,
+            self.enddate
+        )
+        .execute(pool)
+        .await?
+        .last_insert_rowid();
+
+        Ok(Booking {
+            id,
+            startdate: self.startdate,
+            enddate: self.enddate,
+            tid: self.tid,
+        })
+    }
+}
+
+impl ExistingRecord for Booking {
+    async fn delete(self, pool: &SqlitePool) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        sqlx::query!("DELETE FROM booking WHERE id = $1", self.id)
+            .execute(pool)
+            .await?;
+        Ok(self)
     }
 
-    // Finish the booking if it is not finished already
+    async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Self>
+    where
+        Self: Sized,
+    {
+        let booking = sqlx::query_as!(Self, "SELECT * FROM booking WHERE id = $1", id)
+            .fetch_optional(pool)
+            .await?;
+
+        if let Some(b) = booking {
+            Ok(b)
+        } else {
+            Err(sqlx::Error::RowNotFound)
+                .with_context(|| format!("Booking with id {} is not in database", id))
+        }
+    }
+}
+
+impl Booking {
+    pub async fn set_task(mut self, task: ExistingTask) -> anyhow::Result<Self> {
+        self.tid = task.id;
+        Ok(self)
+    }
+
     pub fn finish(mut self) -> anyhow::Result<Self> {
         if !self.is_finished() {
             let time = std::time::SystemTime::now();
@@ -535,17 +550,22 @@ impl Booking {
         }
     }
 
-    // Get all bookings for the given task
-    pub async fn from_task(task_id: i64, pool: &SqlitePool) -> anyhow::Result<Vec<Self>> {
-        let booking = sqlx::query_as!(Self, "SELECT * FROM booking WHERE tid = $1", task_id)
+    pub async fn from_task(task: ExistingTask, pool: &SqlitePool) -> anyhow::Result<Vec<Self>> {
+        let booking = sqlx::query_as!(Self, "SELECT * FROM booking WHERE tid = $1", task.id)
             .fetch_all(pool)
             .await?;
         Ok(booking)
     }
 
-    // Is the booking finished
     pub fn is_finished(&self) -> bool {
         self.enddate.is_some()
+    }
+}
+
+impl NewBooking {
+    pub async fn set_task(mut self, task: ExistingTask) -> anyhow::Result<Self> {
+        self.tid = task.id;
+        Ok(self)
     }
 }
 
@@ -564,4 +584,3 @@ impl Default for Booking {
         }
     }
 }
-*/
