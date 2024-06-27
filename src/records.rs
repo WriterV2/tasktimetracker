@@ -66,12 +66,8 @@ impl ExistingRecord for Task {
         if let Some(t) = task {
             Ok(t)
         } else {
-            Err(sqlx::Error::RowNotFound).with_context(|| {
-                format!(
-                    "Task with temporary id {} is not in database and thus has no real id",
-                    id
-                )
-            })
+            Err(sqlx::Error::RowNotFound)
+                .with_context(|| format!("Task with id {} is not in database", id))
         }
     }
 }
@@ -165,6 +161,19 @@ impl Task {
         .await?;
 
         Ok(self)
+    }
+
+    pub async fn from_name(name: String, pool: &SqlitePool) -> anyhow::Result<Self> {
+        let task = sqlx::query_as!(Self, "SELECT * FROM task WHERE name = $1", name)
+            .fetch_optional(pool)
+            .await?;
+
+        if let Some(t) = task {
+            Ok(t)
+        } else {
+            Err(sqlx::Error::RowNotFound)
+                .with_context(|| format!("Task with name {} is not in database", name))
+        }
     }
 }
 
