@@ -6,7 +6,6 @@ use tasktimetracker::{self, records};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // let pool = SqlitePool::connect(&env::var("DATABASE_URL")?).await?;
     let pool = SqlitePoolOptions::new()
         .connect(&env::var("DATABASE_URL")?)
         .await
