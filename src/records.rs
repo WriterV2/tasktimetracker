@@ -1,9 +1,10 @@
 use anyhow::{Context, Ok};
 use async_trait::async_trait;
+use axum::extract::Query;
 use axum::routing::get;
 use axum::{Extension, Json, Router};
-use serde::Serialize;
-use sqlx::SqlitePool;
+use serde::{Deserialize, Serialize};
+use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 use tower::ServiceBuilder;
 use tower_http::add_extension::AddExtensionLayer;
 
@@ -22,11 +23,35 @@ pub async fn serve(pool: SqlitePool) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn get_bookings(ctx: Extension<ApiContext>) -> Json<Vec<Booking>> {
-    let bookings = sqlx::query_as!(Booking, "SELECT * FROM booking")
-        .fetch_all(&ctx.pool)
-        .await
-        .unwrap();
+#[derive(Deserialize, Debug)]
+struct BookingQueryParams {
+    id: Option<i64>,
+    startdate: Option<i64>,
+    enddate: Option<i64>,
+}
+
+async fn get_bookings(
+    ctx: Extension<ApiContext>,
+    Query(params): Query<BookingQueryParams>,
+) -> Json<Vec<Booking>> {
+    let mut query_builder: QueryBuilder<Sqlite> =
+        QueryBuilder::new("SELECT * FROM booking WHERE TRUE");
+
+    if let Some(id) = params.id {
+        query_builder.push(" AND id = ").push_bind(id);
+    }
+
+    if let Some(startdate) = params.startdate {
+        query_builder.push(" AND startdate = ").push_bind(startdate);
+    }
+
+    if let Some(enddate) = params.enddate {
+        query_builder.push(" AND enddate = ").push_bind(enddate);
+    }
+
+    let query = query_builder.build_query_as::<Booking>();
+    let bookings = query.fetch_all(&ctx.pool).await.unwrap();
+
     Json(bookings)
 }
 
@@ -183,7 +208,7 @@ impl NewTag {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct Booking {
     id: i64,
     startdate: i64,
