@@ -15,6 +15,7 @@ struct ApiContext {
 pub async fn serve(pool: SqlitePool) -> anyhow::Result<()> {
     let app = Router::new()
         .route("/api/bookings", get(get_bookings))
+        .route("/api/tags", get(get_tags))
         .layer(ServiceBuilder::new().layer(AddExtensionLayer::new(ApiContext { pool })));
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
     axum::serve(listener, app.into_make_service()).await?;
@@ -27,6 +28,14 @@ async fn get_bookings(ctx: Extension<ApiContext>) -> Json<Vec<Booking>> {
         .await
         .unwrap();
     Json(bookings)
+}
+
+async fn get_tags(ctx: Extension<ApiContext>) -> Json<Vec<Tag>> {
+    let tags = sqlx::query_as!(Tag, "SELECT * FROM tag")
+        .fetch_all(&ctx.pool)
+        .await
+        .unwrap();
+    Json(tags)
 }
 
 #[async_trait]
