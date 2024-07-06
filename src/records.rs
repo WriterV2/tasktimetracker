@@ -4,6 +4,7 @@ use axum::extract::Query;
 use axum::routing::get;
 use axum::{Extension, Json, Router};
 use serde::{Deserialize, Serialize};
+use sqlx::prelude::FromRow;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 use tower::ServiceBuilder;
 use tower_http::add_extension::AddExtensionLayer;
@@ -49,17 +50,41 @@ async fn get_bookings(
         query_builder.push(" AND enddate = ").push_bind(enddate);
     }
 
-    let query = query_builder.build_query_as::<Booking>();
-    let bookings = query.fetch_all(&ctx.pool).await.unwrap();
+    let bookings = query_builder
+        .build_query_as::<Booking>()
+        .fetch_all(&ctx.pool)
+        .await
+        .unwrap();
 
     Json(bookings)
 }
 
-async fn get_tags(ctx: Extension<ApiContext>) -> Json<Vec<Tag>> {
-    let tags = sqlx::query_as!(Tag, "SELECT * FROM tag")
+#[derive(Deserialize, Debug)]
+struct TagQueryParams {
+    id: Option<i64>,
+    name: Option<String>,
+}
+
+async fn get_tags(
+    ctx: Extension<ApiContext>,
+    Query(params): Query<TagQueryParams>,
+) -> Json<Vec<Tag>> {
+    let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("SELECT * FROM tag WHERE TRUE");
+
+    if let Some(id) = params.id {
+        query_builder.push(" AND id = ").push_bind(id);
+    }
+
+    if let Some(name) = params.name {
+        query_builder.push(" AND name = ").push_bind(name);
+    }
+
+    let tags = query_builder
+        .build_query_as::<Tag>()
         .fetch_all(&ctx.pool)
         .await
         .unwrap();
+
     Json(tags)
 }
 
@@ -96,7 +121,7 @@ pub trait ExistingRecord: Record + serde::Serialize {
 }
 
 // Tags can be added to a task for categorization and organisation
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, FromRow)]
 pub struct Tag {
     id: i64,
     name: String,
