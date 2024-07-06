@@ -1,4 +1,5 @@
 use anyhow::{Context, Ok};
+use async_trait::async_trait;
 use axum::routing::get;
 use axum::{Extension, Json, Router};
 use serde::Serialize;
@@ -28,6 +29,7 @@ async fn get_bookings(ctx: Extension<ApiContext>) -> Json<Vec<Booking>> {
     Json(bookings)
 }
 
+#[async_trait]
 pub trait Record: std::fmt::Debug {
     type Existing: ExistingRecord;
     // Add this record to the database or update it
@@ -37,6 +39,7 @@ pub trait Record: std::fmt::Debug {
 }
 
 // Record that does not exist in the database (yet)
+#[async_trait]
 pub trait NewRecord: Record + Default {
     async fn new() -> anyhow::Result<Self>
     where
@@ -47,6 +50,7 @@ pub trait NewRecord: Record + Default {
 }
 
 // Record from the database
+#[async_trait]
 pub trait ExistingRecord: Record + serde::Serialize {
     async fn from_id(id: i64, pool: &SqlitePool) -> anyhow::Result<Self>
     where
@@ -69,6 +73,7 @@ pub struct NewTag {
     name: String,
 }
 
+#[async_trait]
 impl Record for NewTag {
     type Existing = Tag;
     async fn save(self, pool: &SqlitePool) -> anyhow::Result<Self::Existing>
@@ -87,6 +92,7 @@ impl Record for NewTag {
     }
 }
 
+#[async_trait]
 impl Record for Tag {
     type Existing = Self;
     async fn save(self, pool: &SqlitePool) -> anyhow::Result<Self::Existing>
@@ -100,6 +106,7 @@ impl Record for Tag {
     }
 }
 
+#[async_trait]
 impl ExistingRecord for Tag {
     async fn delete(self, pool: &SqlitePool) -> anyhow::Result<Self>
     where
@@ -128,6 +135,7 @@ impl ExistingRecord for Tag {
     }
 }
 
+#[async_trait]
 impl NewRecord for NewTag {
     async fn new() -> anyhow::Result<Self>
     where
@@ -181,6 +189,7 @@ pub struct NewBooking {
     des: String,
 }
 
+#[async_trait]
 impl Record for Booking {
     type Existing = Self;
     async fn save(self, pool: &SqlitePool) -> anyhow::Result<Self::Existing>
@@ -200,6 +209,7 @@ impl Record for Booking {
     }
 }
 
+#[async_trait]
 impl Record for NewBooking {
     type Existing = Booking;
     async fn save(self, pool: &SqlitePool) -> anyhow::Result<Self::Existing>
@@ -225,6 +235,7 @@ impl Record for NewBooking {
     }
 }
 
+#[async_trait]
 impl ExistingRecord for Booking {
     async fn delete(self, pool: &SqlitePool) -> anyhow::Result<Self>
     where
@@ -321,6 +332,7 @@ impl NewBooking {
     }
 }
 
+#[async_trait]
 impl NewRecord for NewBooking {
     async fn new() -> anyhow::Result<Self> {
         let time = std::time::SystemTime::now();
