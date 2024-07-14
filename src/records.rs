@@ -1,8 +1,8 @@
 use anyhow::{Context, Ok};
 use async_trait::async_trait;
-use axum::extract::Query;
 use axum::routing::get;
 use axum::{Extension, Json, Router};
+use axum_extra::extract::Query;
 use serde::{Deserialize, Serialize};
 use sqlx::prelude::FromRow;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
@@ -27,27 +27,72 @@ pub async fn serve(pool: SqlitePool) -> anyhow::Result<()> {
 #[derive(Deserialize, Debug)]
 struct BookingQueryParams {
     id: Option<i64>,
-    startdate: Option<i64>,
-    enddate: Option<i64>,
+    startdate_min: Option<i64>,
+    startdate_max: Option<i64>,
+    enddate_min: Option<i64>,
+    enddate_max: Option<i64>,
+    tag: Option<Vec<String>>,
+    description_contains: Option<String>,
 }
 
 async fn get_bookings(
     ctx: Extension<ApiContext>,
     Query(params): Query<BookingQueryParams>,
 ) -> Json<Vec<Booking>> {
-    let mut query_builder: QueryBuilder<Sqlite> =
-        QueryBuilder::new("SELECT * FROM booking WHERE TRUE");
+    let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("SELECT * FROM booking");
+
+    if params.tag.is_some() {
+        query_builder.push(
+            " b INNER JOIN tagassignment tg ON b.id = tg.bid INNER JOIN tag t ON t.id = tg.tgid",
+        );
+    }
+    query_builder.push(" WHERE TRUE");
 
     if let Some(id) = params.id {
-        query_builder.push(" AND id = ").push_bind(id);
+        query_builder.push(" AND ");
+        if params.tag.is_some() {
+            query_builder.push("b.");
+        }
+        query_builder.push("id = ").push_bind(id);
     }
 
-    if let Some(startdate) = params.startdate {
-        query_builder.push(" AND startdate = ").push_bind(startdate);
+    if let Some(startdate_min) = params.startdate_min {
+        query_builder
+            .push(" AND startdate > ")
+            .push_bind(startdate_min);
     }
 
-    if let Some(enddate) = params.enddate {
-        query_builder.push(" AND enddate = ").push_bind(enddate);
+    if let Some(startdate_max) = params.startdate_max {
+        query_builder
+            .push(" AND startdate < ")
+            .push_bind(startdate_max);
+    }
+
+    if let Some(enddate_min) = params.enddate_min {
+        query_builder.push(" AND enddate > ").push_bind(enddate_min);
+    }
+
+    if let Some(enddate_max) = params.enddate_max {
+        query_builder.push(" AND enddate > ").push_bind(enddate_max);
+    }
+
+    if let Some(description_contains) = params.description_contains {
+        query_builder
+            .push(" AND des LIKE CONCAT('%', ")
+            .push_bind(description_contains)
+            .push(", '%')");
+    }
+
+    if let Some(tags) = params.tag {
+        query_builder.push(" AND t.name IN (");
+        let tags_len = tags.len();
+        for (index, tag) in tags.into_iter().enumerate() {
+            query_builder.push_bind(tag);
+            if index < tags_len - 1 {
+                query_builder.push(",");
+            }
+        }
+        query_builder.push(")");
     }
 
     let bookings = query_builder
@@ -121,7 +166,7 @@ pub trait ExistingRecord: Record + serde::Serialize {
 }
 
 // Tags can be added to a task for categorization and organisation
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, Deserialize)]
 pub struct Tag {
     id: i64,
     name: String,
