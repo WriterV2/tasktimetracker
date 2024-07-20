@@ -1,5 +1,7 @@
 use anyhow::{Context, Ok};
 use async_trait::async_trait;
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Extension, Json, Router};
 use axum_extra::extract::Query;
@@ -16,7 +18,7 @@ struct ApiContext {
 
 pub async fn serve(pool: SqlitePool) -> anyhow::Result<()> {
     let app = Router::new()
-        .route("/api/bookings", get(get_bookings))
+        .route("/api/bookings", get(get_bookings).post(post_booking))
         .route("/api/tags", get(get_tags))
         .layer(ServiceBuilder::new().layer(AddExtensionLayer::new(ApiContext { pool })));
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
@@ -25,7 +27,50 @@ pub async fn serve(pool: SqlitePool) -> anyhow::Result<()> {
 }
 
 #[derive(Deserialize, Debug)]
-struct BookingQueryParams {
+struct BookingPostQueryParams {
+    enddate: Option<i64>,
+    description: Option<String>,
+}
+
+async fn post_booking(
+    ctx: Extension<ApiContext>,
+    Query(params): Query<BookingPostQueryParams>,
+) -> impl IntoResponse {
+    let mut query_builder: QueryBuilder<Sqlite> =
+        QueryBuilder::new("INSERT INTO BOOKING (startdate");
+    let time = std::time::SystemTime::now();
+    let startdate = time
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+
+    if params.enddate.is_some() {
+        query_builder.push(", enddate");
+    }
+
+    if params.description.is_some() {
+        query_builder.push(", des");
+    }
+
+    query_builder.push(") VALUES (").push_bind(startdate);
+
+    if let Some(enddate) = params.enddate {
+        query_builder.push(", ").push_bind(enddate);
+    }
+
+    if let Some(description) = params.description {
+        query_builder.push(", ").push_bind(description);
+    }
+
+    query_builder.push(")");
+
+    query_builder.build().execute(&ctx.pool).await.unwrap();
+
+    StatusCode::CREATED
+}
+
+#[derive(Deserialize, Debug)]
+struct BookingGetQueryParams {
     id: Option<i64>,
     startdate_min: Option<i64>,
     startdate_max: Option<i64>,
@@ -37,8 +82,8 @@ struct BookingQueryParams {
 
 async fn get_bookings(
     ctx: Extension<ApiContext>,
-    Query(params): Query<BookingQueryParams>,
-) -> Json<Vec<Booking>> {
+    Query(params): Query<BookingGetQueryParams>,
+) -> impl IntoResponse {
     let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("SELECT * FROM booking");
 
     if params.tag.is_some() {
@@ -105,15 +150,15 @@ async fn get_bookings(
 }
 
 #[derive(Deserialize, Debug)]
-struct TagQueryParams {
+struct TagGetQueryParams {
     id: Option<i64>,
     name: Option<String>,
 }
 
 async fn get_tags(
     ctx: Extension<ApiContext>,
-    Query(params): Query<TagQueryParams>,
-) -> Json<Vec<Tag>> {
+    Query(params): Query<TagGetQueryParams>,
+) -> impl IntoResponse {
     let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("SELECT * FROM tag WHERE TRUE");
 
     if let Some(id) = params.id {
