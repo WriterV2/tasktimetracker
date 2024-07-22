@@ -62,11 +62,15 @@ async fn post_booking(
         query_builder.push(", ").push_bind(description);
     }
 
-    query_builder.push(")");
+    query_builder.push(") RETURNING id, startdate, enddate, des");
 
-    query_builder.build().execute(&ctx.pool).await.unwrap();
+    let booking = query_builder
+        .build_query_as::<Booking>()
+        .fetch_one(&ctx.pool)
+        .await
+        .unwrap();
 
-    StatusCode::CREATED
+    (StatusCode::CREATED, Json(booking))
 }
 
 #[derive(Deserialize, Debug)]
