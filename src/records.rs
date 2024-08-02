@@ -18,7 +18,7 @@ struct ApiContext {
 pub async fn serve(pool: SqlitePool) -> anyhow::Result<()> {
     let app = Router::new()
         .route("/api/bookings", get(get_bookings).post(post_booking))
-        .route("/api/tags", get(get_tags))
+        .route("/api/tags", get(get_tags).post(post_tag))
         .layer(ServiceBuilder::new().layer(AddExtensionLayer::new(ApiContext { pool })));
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
     axum::serve(listener, app.into_make_service()).await?;
@@ -179,6 +179,27 @@ async fn get_tags(
         .unwrap();
 
     Json(tags)
+}
+
+#[derive(Deserialize, Debug)]
+struct TagPostQueryParams {
+    name: String,
+}
+
+async fn post_tag(
+    ctx: Extension<ApiContext>,
+    Query(params): Query<TagPostQueryParams>,
+) -> impl IntoResponse {
+    let tag = sqlx::query_as!(
+        Tag,
+        "INSERT INTO tag (name) VALUES ($1) RETURNING id, name",
+        params.name
+    )
+    .fetch_one(&ctx.pool)
+    .await
+    .unwrap();
+
+    (StatusCode::CREATED, Json(tag))
 }
 
 // Tags can be added to a task for categorization and organisation
