@@ -17,12 +17,71 @@ struct ApiContext {
 
 pub async fn serve(pool: SqlitePool) -> anyhow::Result<()> {
     let app = Router::new()
-        .route("/api/bookings", get(get_bookings).post(post_booking))
+        .route(
+            "/api/bookings",
+            get(get_bookings).post(post_booking).patch(patch_booking),
+        )
         .route("/api/tags", get(get_tags).post(post_tag))
         .layer(ServiceBuilder::new().layer(AddExtensionLayer::new(ApiContext { pool })));
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
     axum::serve(listener, app.into_make_service()).await?;
     Ok(())
+}
+
+#[derive(Deserialize, Debug)]
+struct BookingPatchQueryParams {
+    id: i64,
+    startdate: Option<i64>,
+    enddate: Option<i64>,
+    description: Option<String>,
+}
+
+async fn patch_booking(
+    ctx: Extension<ApiContext>,
+    Query(params): Query<BookingPatchQueryParams>,
+) -> impl IntoResponse {
+    let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE booking ");
+
+    if params.description.is_some() || params.startdate.is_some() || params.enddate.is_some() {
+        query_builder.push("SET ");
+
+        let mut comma_necessary = false;
+
+        if let Some(startdate) = params.startdate {
+            query_builder.push("startdate = ").push_bind(startdate);
+            comma_necessary = true;
+        }
+
+        if let Some(enddate) = params.enddate {
+            if comma_necessary {
+                query_builder.push(", ");
+            }
+            query_builder.push("enddate = ").push_bind(enddate);
+            comma_necessary = true;
+        }
+
+        if let Some(description) = params.description {
+            if comma_necessary {
+                query_builder.push(", ");
+            }
+            query_builder.push("des = ").push_bind(description);
+        }
+
+        query_builder
+            .push(" WHERE id = ")
+            .push_bind(params.id)
+            .push(" RETURNING id, startdate, enddate, des");
+
+        let booking = query_builder
+            .build_query_as::<Booking>()
+            .fetch_one(&ctx.pool)
+            .await
+            .unwrap();
+
+        (StatusCode::OK, Json(booking)).into_response()
+    } else {
+        StatusCode::NOT_MODIFIED.into_response()
+    }
 }
 
 #[derive(Deserialize, Debug)]
