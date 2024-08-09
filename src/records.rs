@@ -1,4 +1,3 @@
-use anyhow::Ok;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::get;
@@ -10,12 +9,33 @@ use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 use tower::ServiceBuilder;
 use tower_http::add_extension::AddExtensionLayer;
 
+struct AppError(anyhow::Error);
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> axum::response::Response {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Something went wrong: {}", self.0),
+        )
+            .into_response()
+    }
+}
+
+impl<E> From<E> for AppError
+where
+    E: Into<anyhow::Error>,
+{
+    fn from(err: E) -> Self {
+        Self(err.into())
+    }
+}
+
 #[derive(Clone)]
 struct ApiContext {
     pool: SqlitePool,
 }
 
-pub async fn serve(pool: SqlitePool) -> anyhow::Result<()> {
+pub async fn serve(pool: SqlitePool) {
     let app = Router::new()
         .route(
             "/api/bookings",
@@ -23,9 +43,10 @@ pub async fn serve(pool: SqlitePool) -> anyhow::Result<()> {
         )
         .route("/api/tags", get(get_tags).post(post_tag))
         .layer(ServiceBuilder::new().layer(AddExtensionLayer::new(ApiContext { pool })));
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
-    axum::serve(listener, app.into_make_service()).await?;
-    Ok(())
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    axum::serve(listener, app.into_make_service())
+        .await
+        .unwrap();
 }
 
 #[derive(Deserialize, Debug)]
@@ -39,49 +60,46 @@ struct BookingPatchQueryParams {
 async fn patch_booking(
     ctx: Extension<ApiContext>,
     Query(params): Query<BookingPatchQueryParams>,
-) -> impl IntoResponse {
-    let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE booking ");
-
-    if params.description.is_some() || params.startdate.is_some() || params.enddate.is_some() {
-        query_builder.push("SET ");
-
-        let mut comma_necessary = false;
-
-        if let Some(startdate) = params.startdate {
-            query_builder.push("startdate = ").push_bind(startdate);
-            comma_necessary = true;
-        }
-
-        if let Some(enddate) = params.enddate {
-            if comma_necessary {
-                query_builder.push(", ");
-            }
-            query_builder.push("enddate = ").push_bind(enddate);
-            comma_necessary = true;
-        }
-
-        if let Some(description) = params.description {
-            if comma_necessary {
-                query_builder.push(", ");
-            }
-            query_builder.push("des = ").push_bind(description);
-        }
-
-        query_builder
-            .push(" WHERE id = ")
-            .push_bind(params.id)
-            .push(" RETURNING id, startdate, enddate, des");
-
-        let booking = query_builder
-            .build_query_as::<Booking>()
-            .fetch_one(&ctx.pool)
-            .await
-            .unwrap();
-
-        (StatusCode::OK, Json(booking)).into_response()
-    } else {
-        StatusCode::NOT_MODIFIED.into_response()
+) -> Result<impl IntoResponse, AppError> {
+    if params.description.is_none() && params.startdate.is_none() && params.enddate.is_none() {
+        return Ok(StatusCode::NO_CONTENT.into_response());
     }
+
+    let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("UPDATE booking ");
+    query_builder.push("SET ");
+    let mut comma_necessary = false;
+
+    if let Some(startdate) = params.startdate {
+        query_builder.push("startdate = ").push_bind(startdate);
+        comma_necessary = true;
+    }
+
+    if let Some(enddate) = params.enddate {
+        if comma_necessary {
+            query_builder.push(", ");
+        }
+        query_builder.push("enddate = ").push_bind(enddate);
+        comma_necessary = true;
+    }
+
+    if let Some(description) = params.description {
+        if comma_necessary {
+            query_builder.push(", ");
+        }
+        query_builder.push("des = ").push_bind(description);
+    }
+
+    query_builder
+        .push(" WHERE id = ")
+        .push_bind(params.id)
+        .push(" RETURNING id, startdate, enddate, des");
+
+    let booking = query_builder
+        .build_query_as::<Booking>()
+        .fetch_one(&ctx.pool)
+        .await?;
+
+    Ok(Json(booking).into_response())
 }
 
 #[derive(Deserialize, Debug)]
@@ -93,7 +111,7 @@ struct BookingPostQueryParams {
 async fn post_booking(
     ctx: Extension<ApiContext>,
     Query(params): Query<BookingPostQueryParams>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, AppError> {
     let mut query_builder: QueryBuilder<Sqlite> =
         QueryBuilder::new("INSERT INTO BOOKING (startdate");
     let time = std::time::SystemTime::now();
@@ -125,10 +143,9 @@ async fn post_booking(
     let booking = query_builder
         .build_query_as::<Booking>()
         .fetch_one(&ctx.pool)
-        .await
-        .unwrap();
+        .await?;
 
-    (StatusCode::CREATED, Json(booking))
+    Ok((StatusCode::CREATED, Json(booking)).into_response())
 }
 
 #[derive(Deserialize, Debug)]
@@ -145,7 +162,7 @@ struct BookingGetQueryParams {
 async fn get_bookings(
     ctx: Extension<ApiContext>,
     Query(params): Query<BookingGetQueryParams>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, AppError> {
     let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("SELECT * FROM booking");
 
     if params.tag.is_some() {
@@ -205,10 +222,9 @@ async fn get_bookings(
     let bookings = query_builder
         .build_query_as::<Booking>()
         .fetch_all(&ctx.pool)
-        .await
-        .unwrap();
+        .await?;
 
-    Json(bookings)
+    Ok(Json(bookings))
 }
 
 #[derive(Deserialize, Debug)]
@@ -220,7 +236,7 @@ struct TagGetQueryParams {
 async fn get_tags(
     ctx: Extension<ApiContext>,
     Query(params): Query<TagGetQueryParams>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, AppError> {
     let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("SELECT * FROM tag WHERE TRUE");
 
     if let Some(id) = params.id {
@@ -234,10 +250,9 @@ async fn get_tags(
     let tags = query_builder
         .build_query_as::<Tag>()
         .fetch_all(&ctx.pool)
-        .await
-        .unwrap();
+        .await?;
 
-    Json(tags)
+    Ok(Json(tags))
 }
 
 #[derive(Deserialize, Debug)]
@@ -248,17 +263,16 @@ struct TagPostQueryParams {
 async fn post_tag(
     ctx: Extension<ApiContext>,
     Query(params): Query<TagPostQueryParams>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, AppError> {
     let tag = sqlx::query_as!(
         Tag,
         "INSERT INTO tag (name) VALUES ($1) RETURNING id, name",
         params.name
     )
     .fetch_one(&ctx.pool)
-    .await
-    .unwrap();
+    .await?;
 
-    (StatusCode::CREATED, Json(tag))
+    Ok((StatusCode::CREATED, Json(tag)).into_response())
 }
 
 // Tags can be added to a task for categorization and organisation
