@@ -44,7 +44,13 @@ pub async fn serve(pool: SqlitePool) {
                 .patch(patch_booking)
                 .delete(delete_booking),
         )
-        .route("/api/tags", get(get_tags).post(post_tag).patch(patch_tag))
+        .route(
+            "/api/tags",
+            get(get_tags)
+                .post(post_tag)
+                .patch(patch_tag)
+                .delete(delete_tag),
+        )
         .layer(ServiceBuilder::new().layer(AddExtensionLayer::new(ApiContext { pool })));
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, app.into_make_service())
@@ -320,6 +326,21 @@ async fn patch_tag(
     } else {
         Ok(StatusCode::NO_CONTENT.into_response())
     }
+}
+
+#[derive(Deserialize, Debug)]
+struct TagDeleteQueryParams {
+    id: i64,
+}
+
+async fn delete_tag(
+    ctx: Extension<ApiContext>,
+    Query(params): Query<TagDeleteQueryParams>,
+) -> Result<impl IntoResponse, AppError> {
+    sqlx::query!("DELETE FROM tag WHERE id = $1", params.id)
+        .execute(&ctx.pool)
+        .await?;
+    Ok(())
 }
 
 // Tags can be added to a task for categorization and organisation
