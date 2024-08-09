@@ -39,7 +39,10 @@ pub async fn serve(pool: SqlitePool) {
     let app = Router::new()
         .route(
             "/api/bookings",
-            get(get_bookings).post(post_booking).patch(patch_booking),
+            get(get_bookings)
+                .post(post_booking)
+                .patch(patch_booking)
+                .delete(delete_booking),
         )
         .route("/api/tags", get(get_tags).post(post_tag).patch(patch_tag))
         .layer(ServiceBuilder::new().layer(AddExtensionLayer::new(ApiContext { pool })));
@@ -47,6 +50,21 @@ pub async fn serve(pool: SqlitePool) {
     axum::serve(listener, app.into_make_service())
         .await
         .unwrap();
+}
+
+#[derive(Deserialize, Debug)]
+struct BookingDeleteQueryParams {
+    id: i64,
+}
+
+async fn delete_booking(
+    ctx: Extension<ApiContext>,
+    Query(params): Query<BookingDeleteQueryParams>,
+) -> Result<impl IntoResponse, AppError> {
+    sqlx::query!("DELETE FROM booking WHERE id = $1", params.id)
+        .execute(&ctx.pool)
+        .await?;
+    Ok(())
 }
 
 #[derive(Deserialize, Debug)]
