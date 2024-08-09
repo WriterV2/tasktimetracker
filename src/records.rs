@@ -41,7 +41,7 @@ pub async fn serve(pool: SqlitePool) {
             "/api/bookings",
             get(get_bookings).post(post_booking).patch(patch_booking),
         )
-        .route("/api/tags", get(get_tags).post(post_tag))
+        .route("/api/tags", get(get_tags).post(post_tag).patch(patch_tag))
         .layer(ServiceBuilder::new().layer(AddExtensionLayer::new(ApiContext { pool })));
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     axum::serve(listener, app.into_make_service())
@@ -273,6 +273,35 @@ async fn post_tag(
     .await?;
 
     Ok((StatusCode::CREATED, Json(tag)).into_response())
+}
+
+#[derive(Debug, Deserialize)]
+struct TagPatchQueryParams {
+    id: i64,
+    name: Option<String>,
+}
+
+async fn patch_tag(
+    ctx: Extension<ApiContext>,
+    Query(params): Query<TagPatchQueryParams>,
+) -> Result<impl IntoResponse, AppError> {
+    if let Some(name) = params.name {
+        let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("");
+        query_builder
+            .push("UPDATE tag SET name = ")
+            .push_bind(name)
+            .push(" WHERE id = ")
+            .push_bind(params.id)
+            .push(" RETURNING id, name");
+        let tags = query_builder
+            .build_query_as::<Tag>()
+            .fetch_all(&ctx.pool)
+            .await?;
+
+        Ok(Json(tags).into_response())
+    } else {
+        Ok(StatusCode::NO_CONTENT.into_response())
+    }
 }
 
 // Tags can be added to a task for categorization and organisation
