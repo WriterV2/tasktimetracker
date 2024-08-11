@@ -1,69 +1,21 @@
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::get;
-use axum::{Extension, Json, Router};
+use axum::{Extension, Json};
 use axum_extra::extract::Query;
-use serde::{Deserialize, Serialize};
-use sqlx::prelude::FromRow;
-use sqlx::{QueryBuilder, Sqlite, SqlitePool};
-use tower::ServiceBuilder;
-use tower_http::add_extension::AddExtensionLayer;
+use serde::Deserialize;
+use sqlx::{QueryBuilder, Sqlite};
 
-struct AppError(anyhow::Error);
+use crate::booking::Booking;
+use crate::error::AppError;
 
-impl IntoResponse for AppError {
-    fn into_response(self) -> axum::response::Response {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Something went wrong: {}", self.0),
-        )
-            .into_response()
-    }
-}
-
-impl<E> From<E> for AppError
-where
-    E: Into<anyhow::Error>,
-{
-    fn from(err: E) -> Self {
-        Self(err.into())
-    }
-}
-
-#[derive(Clone)]
-struct ApiContext {
-    pool: SqlitePool,
-}
-
-pub async fn serve(pool: SqlitePool) {
-    let app = Router::new()
-        .route(
-            "/api/bookings",
-            get(get_bookings)
-                .post(post_booking)
-                .patch(patch_booking)
-                .delete(delete_booking),
-        )
-        .route(
-            "/api/tags",
-            get(get_tags)
-                .post(post_tag)
-                .patch(patch_tag)
-                .delete(delete_tag),
-        )
-        .layer(ServiceBuilder::new().layer(AddExtensionLayer::new(ApiContext { pool })));
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    axum::serve(listener, app.into_make_service())
-        .await
-        .unwrap();
-}
+use super::ApiContext;
 
 #[derive(Deserialize, Debug)]
-struct BookingDeleteQueryParams {
+pub struct BookingDeleteQueryParams {
     id: i64,
 }
 
-async fn delete_booking(
+pub async fn delete_booking(
     ctx: Extension<ApiContext>,
     Query(params): Query<BookingDeleteQueryParams>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -74,14 +26,14 @@ async fn delete_booking(
 }
 
 #[derive(Deserialize, Debug)]
-struct BookingPatchQueryParams {
+pub struct BookingPatchQueryParams {
     id: i64,
     startdate: Option<i64>,
     enddate: Option<i64>,
     description: Option<String>,
 }
 
-async fn patch_booking(
+pub async fn patch_booking(
     ctx: Extension<ApiContext>,
     Query(params): Query<BookingPatchQueryParams>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -127,12 +79,12 @@ async fn patch_booking(
 }
 
 #[derive(Deserialize, Debug)]
-struct BookingPostQueryParams {
+pub struct BookingPostQueryParams {
     enddate: Option<i64>,
     description: Option<String>,
 }
 
-async fn post_booking(
+pub async fn post_booking(
     ctx: Extension<ApiContext>,
     Query(params): Query<BookingPostQueryParams>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -173,7 +125,7 @@ async fn post_booking(
 }
 
 #[derive(Deserialize, Debug)]
-struct BookingGetQueryParams {
+pub struct BookingGetQueryParams {
     id: Option<i64>,
     startdate_min: Option<i64>,
     startdate_max: Option<i64>,
@@ -183,7 +135,7 @@ struct BookingGetQueryParams {
     description_contains: Option<String>,
 }
 
-async fn get_bookings(
+pub async fn get_bookings(
     ctx: Extension<ApiContext>,
     Query(params): Query<BookingGetQueryParams>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -249,111 +201,4 @@ async fn get_bookings(
         .await?;
 
     Ok(Json(bookings))
-}
-
-#[derive(Deserialize, Debug)]
-struct TagGetQueryParams {
-    id: Option<i64>,
-    name: Option<String>,
-}
-
-async fn get_tags(
-    ctx: Extension<ApiContext>,
-    Query(params): Query<TagGetQueryParams>,
-) -> Result<impl IntoResponse, AppError> {
-    let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("SELECT * FROM tag WHERE TRUE");
-
-    if let Some(id) = params.id {
-        query_builder.push(" AND id = ").push_bind(id);
-    }
-
-    if let Some(name) = params.name {
-        query_builder.push(" AND name = ").push_bind(name);
-    }
-
-    let tags = query_builder
-        .build_query_as::<Tag>()
-        .fetch_all(&ctx.pool)
-        .await?;
-
-    Ok(Json(tags))
-}
-
-#[derive(Deserialize, Debug)]
-struct TagPostQueryParams {
-    name: String,
-}
-
-async fn post_tag(
-    ctx: Extension<ApiContext>,
-    Query(params): Query<TagPostQueryParams>,
-) -> Result<impl IntoResponse, AppError> {
-    let tag = sqlx::query_as!(
-        Tag,
-        "INSERT INTO tag (name) VALUES ($1) RETURNING id, name",
-        params.name
-    )
-    .fetch_one(&ctx.pool)
-    .await?;
-
-    Ok((StatusCode::CREATED, Json(tag)).into_response())
-}
-
-#[derive(Debug, Deserialize)]
-struct TagPatchQueryParams {
-    id: i64,
-    name: Option<String>,
-}
-
-async fn patch_tag(
-    ctx: Extension<ApiContext>,
-    Query(params): Query<TagPatchQueryParams>,
-) -> Result<impl IntoResponse, AppError> {
-    if let Some(name) = params.name {
-        let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("");
-        query_builder
-            .push("UPDATE tag SET name = ")
-            .push_bind(name)
-            .push(" WHERE id = ")
-            .push_bind(params.id)
-            .push(" RETURNING id, name");
-        let tags = query_builder
-            .build_query_as::<Tag>()
-            .fetch_all(&ctx.pool)
-            .await?;
-
-        Ok(Json(tags).into_response())
-    } else {
-        Ok(StatusCode::NO_CONTENT.into_response())
-    }
-}
-
-#[derive(Deserialize, Debug)]
-struct TagDeleteQueryParams {
-    id: i64,
-}
-
-async fn delete_tag(
-    ctx: Extension<ApiContext>,
-    Query(params): Query<TagDeleteQueryParams>,
-) -> Result<impl IntoResponse, AppError> {
-    sqlx::query!("DELETE FROM tag WHERE id = $1", params.id)
-        .execute(&ctx.pool)
-        .await?;
-    Ok(())
-}
-
-// Tags can be added to a task for categorization and organisation
-#[derive(Debug, Serialize, FromRow, Deserialize)]
-pub struct Tag {
-    id: i64,
-    name: String,
-}
-
-#[derive(Debug, Serialize, sqlx::FromRow)]
-pub struct Booking {
-    id: i64,
-    startdate: i64,
-    enddate: Option<i64>,
-    des: String,
 }

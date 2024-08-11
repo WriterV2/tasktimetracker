@@ -1,7 +1,10 @@
 use sqlx::sqlite::SqlitePoolOptions;
 use std::env;
 
-use tasktimetracker::{self, records};
+mod booking;
+mod error;
+mod handlers;
+mod tag;
 
 #[tokio::main]
 async fn main() {
@@ -16,5 +19,9 @@ async fn main() {
         .run(&pool)
         .await
         .expect("Failed to run migrations");
-    records::serve(pool).await;
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    axum::serve(listener, handlers::router(pool).await.into_make_service())
+        .await
+        .unwrap();
 }
