@@ -1,4 +1,4 @@
-use axum::routing::{get, post};
+use axum::routing::get;
 use axum::Router;
 use sqlx::SqlitePool;
 use tower::ServiceBuilder;
@@ -31,7 +31,8 @@ pub async fn router(pool: SqlitePool) -> Router {
         )
         .route(
             "/api/assignedtag",
-            post(tagassignment_handlers::post_tagassignment),
+            get(tagassignment_handlers::get_tagassignment)
+                .post(tagassignment_handlers::post_tagassignment),
         )
         .layer(ServiceBuilder::new().layer(AddExtensionLayer::new(ApiContext { pool })))
 }

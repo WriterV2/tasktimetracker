@@ -195,10 +195,7 @@ pub async fn get_bookings(
         query_builder.push(")");
     }
 
-    let bookings = query_builder
-        .build_query_as::<Booking>()
-        .fetch_all(&ctx.pool)
-        .await?;
+    let bookings: Vec<Booking> = query_builder.build_query_as().fetch_all(&ctx.pool).await?;
 
     Ok(Json(bookings))
 }

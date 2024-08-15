@@ -39,3 +39,34 @@ pub async fn post_tagassignment(
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(result)))
 }
+
+#[derive(Deserialize, Debug)]
+pub struct TagAssignmentGetQueryParams {
+    booking_id: Option<i64>,
+    tag_id: Option<i64>,
+}
+
+pub async fn get_tagassignment(
+    ctx: Extension<ApiContext>,
+    Query(params): Query<TagAssignmentGetQueryParams>,
+) -> Result<impl IntoResponse, AppError> {
+    let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new("SELECT * FROM tagassignment");
+    if params.booking_id.is_some() || params.tag_id.is_some() {
+        query_builder.push(" WHERE");
+        let mut tgid_added = false;
+        if let Some(tgid) = params.tag_id {
+            query_builder.push(" tgid = ").push_bind(tgid);
+            tgid_added = true;
+        }
+
+        if let Some(bid) = params.booking_id {
+            if tgid_added {
+                query_builder.push(" AND");
+            }
+            query_builder.push(" bid = ").push_bind(bid);
+        }
+    }
+    let tagassignments: Vec<TagAssignment> =
+        query_builder.build_query_as().fetch_all(&ctx.pool).await?;
+    Ok(Json(tagassignments))
+}
