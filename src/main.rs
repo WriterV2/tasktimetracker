@@ -5,6 +5,7 @@ mod booking;
 mod error;
 mod handlers;
 mod tag;
+mod tagassignment;
 
 #[tokio::main]
 async fn main() {

@@ -1,4 +1,4 @@
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 use sqlx::SqlitePool;
 use tower::ServiceBuilder;
@@ -6,6 +6,7 @@ use tower_http::add_extension::AddExtensionLayer;
 
 mod booking_handlers;
 mod tag_handlers;
+mod tagassignment_handlers;
 
 #[derive(Clone)]
 struct ApiContext {
@@ -27,6 +28,10 @@ pub async fn router(pool: SqlitePool) -> Router {
                 .post(tag_handlers::post_tag)
                 .patch(tag_handlers::patch_tag)
                 .delete(tag_handlers::delete_tag),
+        )
+        .route(
+            "/api/assignedtag",
+            post(tagassignment_handlers::post_tagassignment),
         )
         .layer(ServiceBuilder::new().layer(AddExtensionLayer::new(ApiContext { pool })))
 }
