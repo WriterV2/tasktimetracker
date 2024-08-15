@@ -16,7 +16,7 @@ pub struct TagAssignmentPostQueryParams {
     booking_id: i64,
 }
 
-pub async fn post_tagassignment(
+pub async fn post_tagassignments(
     ctx: Extension<ApiContext>,
     Query(params): Query<TagAssignmentPostQueryParams>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -42,11 +42,11 @@ pub async fn post_tagassignment(
 
 #[derive(Deserialize, Debug)]
 pub struct TagAssignmentGetQueryParams {
-    booking_id: Option<i64>,
     tag_id: Option<i64>,
+    booking_id: Option<i64>,
 }
 
-pub async fn get_tagassignment(
+pub async fn get_tagassignments(
     ctx: Extension<ApiContext>,
     Query(params): Query<TagAssignmentGetQueryParams>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -69,4 +69,24 @@ pub async fn get_tagassignment(
     let tagassignments: Vec<TagAssignment> =
         query_builder.build_query_as().fetch_all(&ctx.pool).await?;
     Ok(Json(tagassignments))
+}
+
+#[derive(Deserialize, Debug)]
+pub struct TagAssignmentDeleteQueryParams {
+    tag_id: i64,
+    booking_id: i64,
+}
+
+pub async fn delete_tagassignment(
+    ctx: Extension<ApiContext>,
+    Query(params): Query<TagAssignmentDeleteQueryParams>,
+) -> Result<impl IntoResponse, AppError> {
+    sqlx::query!(
+        "DELETE FROM tagassignment WHERE tgid = $1 AND bid = $2",
+        params.tag_id,
+        params.booking_id
+    )
+    .execute(&ctx.pool)
+    .await?;
+    Ok(())
 }

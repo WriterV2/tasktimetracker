@@ -31,8 +31,9 @@ pub async fn router(pool: SqlitePool) -> Router {
         )
         .route(
             "/api/assignedtag",
-            get(tagassignment_handlers::get_tagassignment)
-                .post(tagassignment_handlers::post_tagassignment),
+            get(tagassignment_handlers::get_tagassignments)
+                .post(tagassignment_handlers::post_tagassignments)
+                .delete(tagassignment_handlers::delete_tagassignment),
         )
         .layer(ServiceBuilder::new().layer(AddExtensionLayer::new(ApiContext { pool })))
 }
